@@ -198,3 +198,54 @@ See [`LICENSE`](LICENSE) for the full license text. Individual source files may 
 ## Credits
 
 [Original Version by Ben Trask](https://github.com/btrask/EasyCapViewer) (2009-2013).
+
+## Headless STK1160 diagnostics
+
+`tools/ecv-capture.m` uses the existing USB driver and frame decoder without a
+window, keyboard events, or the Metal renderer. It currently supports **video
+snapshots and diagnostics only** for USB `05e1:0408`; audio and movie recording
+remain in the GUI application. It builds using Apple's Command Line Tools;
+full Xcode is not required for this tool.
+
+```sh
+python3 tools/build-headless.py
+# Close the GUI first: only one process can own the USB capture interface.
+build/headless/ecv-capture --standard pal --input composite --seconds 5 \
+  --output build/headless/frame.uyvy > build/headless/status.json
+```
+
+Capture starts immediately and stops after the requested duration (or SIGINT /
+SIGTERM). Options include `pal`, `ntsc`, `secam` and `composite`, `svideo`, or
+composite channels `1`–`4`. The default is PAL composite for five seconds. Each
+invocation opens and resets the adapter. It requires an active analog source.
+
+Standard output is JSON: frame callback count, dimensions, packed UYVY pixel
+format, luminance statistics, and decoder registers sampled at callback 30.
+`sync_locked` is null if no status sample was obtained; otherwise it reflects
+bit 6 of SAA711x register `0x1f` (clear means sync locked). This interpretation
+follows the [Linux SAA711x driver](https://github.com/torvalds/linux/blob/master/drivers/media/i2c/saa7115.c);
+raw values are retained for clone-chip debugging. A stream of USB frames does
+**not** by itself prove that the analog source is connected or synchronized.
+The frame count measures callbacks, not unique interlaced frames or dropped frames.
+
+Diagnostics go to stderr. Exit status is 0 if frames arrived, 1 for capture or
+output failure, and 2 for invalid arguments. A dark or unlocked picture still
+returns 0; inspect JSON to assess the signal. The output is the last woven frame,
+without timestamps or audio. Convert a PAL snapshot using FFmpeg:
+
+```sh
+ffmpeg -f rawvideo -pixel_format uyvy422 -video_size 704x576 \
+  -i build/headless/frame.uyvy -frames:v 1 build/headless/frame.png
+```
+
+Use the JSON dimensions for other standards (NTSC is 704×480). Build output and
+local captures under `build/` are ignored by Git.
+
+For the GUI, automatic playback is already supported and can be enabled with:
+
+```sh
+defaults write com.christian-sanches.EasyCapViewer ECVAutoPlay -bool true
+```
+
+That setting starts playback on the next device connection or app launch; it
+does not turn the GUI application into a headless process.
