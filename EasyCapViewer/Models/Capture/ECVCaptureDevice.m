@@ -263,12 +263,14 @@ static IOReturn ECVGetPipeWithProperties(IOUSBInterfaceInterface **const interfa
 		IOReturn err = kIOReturnSuccess;
 		err = err ?: ((_USBDevice = [[self class] USBDeviceWithService:[self service]]) ? kIOReturnSuccess : kIOReturnError);
 
-		err = err ?: ECVIOReturn((*_USBDevice)->USBDeviceOpen(_USBDevice));
-		err = err ?: ECVIOReturn((*_USBDevice)->ResetDevice(_USBDevice));
+		if (![self usesSharedUSBDevice]) {
+			err = err ?: ECVIOReturn((*_USBDevice)->USBDeviceOpen(_USBDevice));
+			err = err ?: ECVIOReturn((*_USBDevice)->ResetDevice(_USBDevice));
 
-		IOUSBConfigurationDescriptorPtr configurationDescription = NULL;
-		err = err ?: ECVIOReturn((*_USBDevice)->GetConfigurationDescriptorPtr(_USBDevice, 0, &configurationDescription));
-		err = err ?: ECVIOReturn((*_USBDevice)->SetConfiguration(_USBDevice, configurationDescription->bConfigurationValue));
+			IOUSBConfigurationDescriptorPtr configurationDescription = NULL;
+			err = err ?: ECVIOReturn((*_USBDevice)->GetConfigurationDescriptorPtr(_USBDevice, 0, &configurationDescription));
+			err = err ?: ECVIOReturn((*_USBDevice)->SetConfiguration(_USBDevice, configurationDescription->bConfigurationValue));
+		}
 
 		if(kIOReturnSuccess != err) {
 			ECVLog(ECVError, @"Device %@ failed to open", self);
@@ -282,6 +284,7 @@ static IOReturn ECVGetPipeWithProperties(IOUSBInterfaceInterface **const interfa
 	}
 	return self;
 }
+- (BOOL)usesSharedUSBDevice { return NO; }
 - (BOOL)isValid
 {
 	return _valid;
@@ -530,7 +533,7 @@ static IOReturn ECVGetPipeWithProperties(IOUSBInterfaceInterface **const interfa
 
 - (void)dealloc
 {
-	if(_USBDevice) (*_USBDevice)->USBDeviceClose(_USBDevice);
+	if(_USBDevice && ![self usesSharedUSBDevice]) (*_USBDevice)->USBDeviceClose(_USBDevice);
 	if(_USBDevice) (*_USBDevice)->Release(_USBDevice);
 	_USBDevice = NULL;
 

@@ -415,16 +415,65 @@ Relevant sources and limits:
   That explains a possible additional loss mechanism but not the native resets.
 - [Linux's STK1160 alignment fix](https://lkml.iu.edu/1611.3/01090.html) applies to
   USB `05e1:0408` and requires transfer alignment. This is a driver-level lead,
-  not proof that Apple's driver has the same defect or a patch we can apply at
-  the AVFoundation layer.
+  subsequently corroborated by the USB daemon logs described below.
 - [Linux AC97 setup](https://github.com/torvalds/linux/blob/master/drivers/media/usb/stk1160/stk1160-ac97.c)
   distinguishes internal ADC and AC97 hardware, resets the codec and selects
-  line-in. No speculative codec register changes were applied.
+  line-in. The direct USB reader below uses this audio initialization sequence.
 - [Focusrite's macOS input guidance](https://support.focusrite.com/hc/en-gb/articles/15437020104082-macOS-recording-input-issues)
   motivates checking microphone processing; Standard was verified locally.
 
-Next isolation step: bypass the current multiport hub or use another USB-C port,
-then rerun the comparison. Only after a candidate passes should we run three
-30-second playback captures and a two-minute simultaneous-video capture, followed
-by listening review. Those acceptance runs are deliberately pending: the current
-configuration demonstrably fails, and more long recordings would not validate a fix.
+### Direct USB audio workaround (experimental)
+
+Moving to another USB-C port did not resolve the interruptions. macOS `usbaudiod`
+logs showed `AUAInputTransferManager_completeBlock invalid completeCount: 190`
+(and 186), followed by configuration changes. Those packet lengths contain valid
+16-bit samples but end halfway through a four-byte stereo frame. The new libusb
+reader preserves these samples across packet boundaries, following the byte
+continuity behavior of Linux's `QUIRK_FLAG_ALIGN_TRANSFER`, and bypasses Apple's
+USB audio path. It does not fill gaps with silence or interpolate missing audio.
+
+Requires Homebrew libusb (`brew install libusb`) and administrator authorization
+for each capture. Close other capture applications. The reader temporarily takes
+USB ownership and restores the system driver on completion; it changes no system
+configuration. This is a separate headless capture path, not a GUI audio fix.
+
+```sh
+python3 tools/build-headless.py
+python3 tools/build-usbaudio.py
+build/headless/ecv-usbaudio --probe
+build/headless/ecv-usbaudio --self-test
+sudo python3 tools/record-usb.py build/headless/new-take --seconds 30 --video
+# Export confirmed camera soundtrack channel 2, without elevated privileges:
+ffmpeg -f s16le -ar 48000 -ac 2 -i build/headless/new-take/audio.s16le \
+  -af 'pan=mono|c0=c1' build/headless/new-take/listen.wav
+python3 tools/check-audio.py build/headless/new-take/listen.wav \
+  --report build/headless/new-take/check.json
+```
+
+The output directory must be new; captures are bounded to 1–120 seconds. Omit
+`--video` for audio alone. Video mode exercises simultaneous video transfers and
+saves both the final 704×576 UYVY snapshot and the full raw movie. Allow about
+40 MB/s of disk space during video capture, including the ten-second lead-in.
+Export with `python3 tools/export-usb.py build/headless/new-take` to produce
+`playback.mp4` (H.264, deinterlaced PAL at 25 fps, mono AAC). Host monotonic
+timestamps align the starts and preserve elapsed time when video frames are
+missing (holding the preceding image). `export.json` reports repeated frames and
+the maximum frame interval. Decoder and USB latency are not calibrated, so
+check lip sync. Original PCM and video remain available. It opens only the video interface
+with `--shared-device`, avoiding a whole-device reset while USB audio is owned.
+Audio starts after ten seconds of video initialization; shutdown reserves twenty
+seconds for the video process to finish before returning device ownership.
+
+`audio.json` reports packet errors, empty packets, half-frame boundaries, trailing
+bytes and captured duration. A nonzero trailing-byte count identifies an incomplete
+final stereo frame, which is not written. Odd-byte packets fail rather than
+silently corrupting channel alignment. Preserve this report alongside the content
+detector report: neither alone proves uninterrupted playback.
+
+Initial 30-second transport tests had no packet errors or detector flags, including
+simultaneous video, but the camera was stopped. After the user started playback,
+`usb-playback-02` captured 30.016646 seconds of audio at -24.52 dBFS RMS, preserved
+150 half-frame packets, and had zero packet errors, empty packets, trailing bytes,
+flat runs or suspected detector events. The user confirmed that this playback sample sounds good. A second 30-second
+playback capture with simultaneous video also had zero transport errors and
+detector flags. Longer playback acceptance remains pending; stopped-camera tests are not soundtrack validation.

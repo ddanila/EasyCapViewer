@@ -94,6 +94,8 @@ extern NSString *const ECVHueKey;
 + (IOUSBInterfaceInterface **)USBInterfaceWithDevice:(IOUSBDeviceInterface **const)device;
 
 - (id)initWithService:(io_service_t const)service;
+// Opt-in for a headless process sharing interfaces with a USB audio owner.
+- (BOOL)usesSharedUSBDevice;
 - (BOOL)isValid;
 - (void)invalidate;
 
