@@ -203,8 +203,9 @@ See [`LICENSE`](LICENSE) for the full license text. Individual source files may 
 
 `tools/ecv-capture.m` uses the existing USB driver and frame decoder without a
 window, keyboard events, or the Metal renderer. It currently supports **video
-snapshots and diagnostics only** for USB `05e1:0408`; audio and movie recording
-remain in the GUI application. It builds using Apple's Command Line Tools;
+snapshots and diagnostics only** for USB `05e1:0408`. The separate native audio
+recorder below captures PCM audio; synchronized movie recording is not yet supported
+by these tools. It builds using Apple's Command Line Tools;
 full Xcode is not required for this tool.
 
 ```sh
@@ -256,3 +257,62 @@ This differs from `--input 1|2|3|4`, which selects the dongle's external input
 multiplexer. Omit the override for normal capture. It is applied during device
 initialization and does not change the GUI driver or its defaults. Some inputs
 may produce no frames, in which case the frame-triggered status sample is absent.
+
+
+### Confirmed Samsung VP-L500 cabling (2026-11-25)
+
+These connections were tested with this camera, this four-contact cable, and the
+Syntek `05e1:0408` adapter. They are not a universal Samsung socket pinout.
+
+| Camera cable RCA plug | Capture adapter input | Observed result |
+| --- | --- | --- |
+| White | Yellow composite video | Recognizable PAL playback picture |
+| Red | White audio | Soundtrack confirmed by listening |
+| Yellow | Disconnected | Not needed |
+
+The cable's measured contacts, from tip, are Audio 1 / Audio 2 / Video / Ground;
+its RCA colors do not match their actual function on this camera. Keep the
+mini-jack fully inserted in AV OUT. The captured soundtrack appeared in PCM
+channel **2** (zero-based `c1`), despite using the adapter's white socket.
+
+### Native headless audio capture
+
+The initial FFmpeg 9.0.1 AVFoundation test yielded only 7.48 seconds of PCM during
+a 10-second capture, and listening revealed clicks. Its
+[AVFoundation input implementation](https://github.com/FFmpeg/FFmpeg/blob/n9.0.1/libavdevice/avfoundation.m)
+replaces an unread audio buffer when a new callback arrives. This is a suspected
+capture-loss cause, not proof that every audible click originates there.
+
+`ecv-audio` writes PCM directly from each serial AVFoundation callback into a CAF
+file, preserving both channels and reporting timestamp discontinuities. No noise
+removal, gap filling, or resampling is applied to the original recording. Disk
+write failures and gaps cause a nonzero exit status, rather than silently claiming
+a clean recording. Gaps below two samples are treated as timestamp rounding.
+
+```sh
+python3 tools/build-headless.py
+build/headless/ecv-audio 'USB Audio Interface' 10 build/headless/take-01.caf \
+  > build/headless/take-01-audio.json
+# Export the confirmed audio channel for listening (keep the original CAF):
+ffmpeg -i build/headless/take-01.caf -af 'pan=mono|c0=c1' \
+  -c:a pcm_s16le build/headless/take-01-mono.wav
+```
+
+Use a new output filename for every capture; the recorder refuses to overwrite.
+SIGINT/SIGTERM finalize the file. Duration is wall time after session startup;
+compare `sample_seconds` with `timeline_seconds` to assess sample continuity.
+The adapter can be tested with the player stopped, but a playback/listening test
+is still needed to assess clicks. Audio and video tools currently run independently;
+this is not yet a synchronized movie recorder.
+
+A recognizable video picture was captured while decoder register `0x1f` reported
+`0x48` (the generic `sync_locked` diagnostic was false). Do not use that flag alone
+to reject a recording on this adapter; clone-chip interpretation and video timing
+still need investigation with playback running.
+
+Validation on this adapter: native audio alone recorded 480,085 sample frames
+(10.001771 s), and audio with concurrent USB video capture recorded 479,980
+(9.999583 s). Both timelines matched the sample durations with zero detected
+gaps. The concurrent video test delivered 498 callbacks and reported decoder
+status `0x81` (locked). These tests establish continuity, not audible quality;
+a fresh tape playback test is required to confirm the clicks are resolved.

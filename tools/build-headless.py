@@ -29,3 +29,10 @@ for framework in ['Cocoa', 'IOKit', 'CoreVideo', 'CoreMedia', 'AVFoundation', 'A
 cmd += ['-o', str(out / 'ecv-capture')]
 subprocess.run(cmd, check=True)
 print(out / 'ecv-capture')
+
+# Native audio recorder avoids FFmpeg's single unread AVFoundation buffer.
+subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-O2',
+                '-Wno-deprecated-declarations', str(root / 'tools/ecv-audio.m'),
+                '-framework', 'Foundation', '-framework', 'AVFoundation',
+                '-framework', 'CoreMedia', '-o', str(out / 'ecv-audio')], check=True)
+print(out / 'ecv-audio')
