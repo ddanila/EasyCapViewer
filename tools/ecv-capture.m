@@ -15,9 +15,15 @@ static void interruptCapture(int signalNumber) { interrupted = 1; }
 @property OSType format;
 @property BOOL finished;
 @property NSDictionary *decoderRegisters;
+@property NSNumber *decoderInput;
 @end
 
 @implementation ECVHeadlessDevice
+// Diagnostic override for dongles wired to a different decoder analog pin.
+- (BOOL)writeSAA711XRegister:(uint8_t)reg value:(int16_t)value {
+    if (reg == 0x02 && self.decoderInput) value = (value & 0xf0) | self.decoderInput.intValue;
+    return [super writeSAA711XRegister:reg value:value];
+}
 // Reuse USB and pixel decoding, without constructing a UI/audio capture session.
 - (void)pushVideoFrame:(ECVVideoFrame *)frame {
     if (!frame || ![frame lockIfHasBytes]) return;
@@ -53,7 +59,7 @@ static void interruptCapture(int signalNumber) { interrupted = 1; }
 
 static int usage(void) {
     fprintf(stderr, "Usage: ecv-capture [--standard pal|ntsc|secam] [--input composite|svideo|1|2|3|4]\n"
-                    "                   [--seconds 5] [--output frame.uyvy]\n"
+                    "                   [--seconds 5] [--output frame.uyvy] [--decoder-input 0|1|2|3]\n"
                     "Starts immediately, emits a JSON summary, saves the last packed UYVY frame.\n"
                     "Video only. Close EasyCapViewer first. Ctrl-C stops capture.\n");
     return 2;
@@ -63,6 +69,7 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         NSString *standard = @"pal", *input = @"composite", *output = nil;
         double seconds = 5;
+        NSNumber *decoderInput = nil;
         for (int i = 1; i < argc; i++) {
             NSString *arg = @(argv[i]);
             if ([arg isEqual:@"--help"]) { usage(); return 0; }
@@ -71,6 +78,10 @@ int main(int argc, const char *argv[]) {
             if ([arg isEqual:@"--standard"]) standard = value;
             else if ([arg isEqual:@"--input"]) input = value;
             else if ([arg isEqual:@"--output"]) output = value;
+            else if ([arg isEqual:@"--decoder-input"]) {
+                if (![@[@"0", @"1", @"2", @"3"] containsObject:value]) return usage();
+                decoderInput = @(value.intValue);
+            }
             else if ([arg isEqual:@"--seconds"]) {
                 char *end = NULL;
                 seconds = strtod(argv[i], &end);
@@ -97,6 +108,7 @@ int main(int argc, const char *argv[]) {
         ECVHeadlessDevice *device = [[ECVHeadlessDevice alloc] initWithService:service];
         IOObjectRelease(service);
         if (!device) { fprintf(stderr, "Cannot open STK1160. Close other capture apps.\n"); return 1; }
+        device.decoderInput = decoderInput;
         Class formatClass = formats[standard];
         [device setVideoFormat:[formatClass format]];
         [device setVideoSource:[NSClassFromString(inputs[input]) source]];

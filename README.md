@@ -249,3 +249,10 @@ defaults write com.christian-sanches.EasyCapViewer ECVAutoPlay -bool true
 
 That setting starts playback on the next device connection or app launch; it
 does not turn the GUI application into a headless process.
+
+For hardware diagnosis, `--decoder-input 0|1|2|3` overrides only the low nibble
+of decoder register `0x02`, selecting another analog pin inside the SAA711x.
+This differs from `--input 1|2|3|4`, which selects the dongle's external input
+multiplexer. Omit the override for normal capture. It is applied during device
+initialization and does not change the GUI driver or its defaults. Some inputs
+may produce no frames, in which case the frame-triggered status sample is absent.
