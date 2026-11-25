@@ -316,3 +316,42 @@ Validation on this adapter: native audio alone recorded 480,085 sample frames
 gaps. The concurrent video test delivered 498 callbacks and reported decoder
 status `0x81` (locked). These tests establish continuity, not audible quality;
 a fresh tape playback test is required to confirm the clicks are resolved.
+
+### Detecting audible interruptions automatically
+
+Timestamp continuity alone is insufficient: the first native playback recording
+had zero timestamp gaps but 42 exact-zero PCM runs totaling 8.49 of 14.96 seconds.
+The same defects occur in the original CAF, not just the WAV listening export.
+
+`tools/check-audio.py` checks decoded PCM for exact silence/held samples lasting
+at least 2 ms and abrupt jumps at least eight times the local 95th-percentile
+sample slope. Flat runs are marked as suspected interruptions when surrounded
+by audio above approximately -60 dBFS. Every event includes a time and duration.
+No samples are repaired. Intentional silence and transients can trigger flags;
+other kinds of distortion may go undetected. This is a comparison and triage tool,
+not an automatic certification of audible quality. Analysis uses 16-bit PCM;
+very quiet material can quantize to zero. Requires Python 3 and FFmpeg, no pip packages.
+
+```sh
+# Analyze an existing capture; exit 1 means suspicious events, 2 means an error.
+python3 tools/check-audio.py build/headless/take-01.caf --channel 2 \
+  --report build/headless/take-01-check.json
+# Record AND analyze in one command (new output path required):
+python3 tools/check-audio.py build/headless/take-02.caf --capture-seconds 15 \
+  --channel 2 --report build/headless/take-02-check.json
+python3 tools/test-check-audio.py
+```
+
+Channels are 1-based; omit `--channel` to select the channel with highest RMS.
+The combined command includes the native recorder's timestamp report in its JSON.
+Exit 0 means no suspected events/gaps were found, not necessarily good sound.
+In particular, an entirely silent recording is reported as silence but is not
+classified as an interruption without surrounding audio. Reports contain all
+flat runs, including those not classified as interruptions. Use bounded takes:
+the analyzer loads decoded samples into memory.
+
+Regression checks cover a clean tone, all-silent audio, an injected 170 ms dropout,
+a held sample, and a click. On the existing recordings it flags 8 abrupt jumps
+in the original FFmpeg listening sample, and 42 zero runs plus 2 abrupt jumps in
+the native playback sample. These recordings are different tape passages, so
+counts alone are not a controlled comparison of capture methods.
