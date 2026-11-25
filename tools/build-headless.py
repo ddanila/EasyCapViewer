@@ -36,3 +36,9 @@ subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-O2',
                 '-framework', 'Foundation', '-framework', 'AVFoundation',
                 '-framework', 'CoreMedia', '-o', str(out / 'ecv-audio')], check=True)
 print(out / 'ecv-audio')
+
+subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-O2',
+                '-Wno-deprecated-declarations', str(root / 'tools/ecv-coreaudio.m'),
+                '-framework', 'Foundation', '-framework', 'AVFoundation',
+                '-framework', 'CoreAudio', '-o', str(out / 'ecv-coreaudio')], check=True)
+print(out / 'ecv-coreaudio')

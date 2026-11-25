@@ -355,3 +355,76 @@ a held sample, and a click. On the existing recordings it flags 8 abrupt jumps
 in the original FFmpeg listening sample, and 42 zero runs plus 2 abrupt jumps in
 the native playback sample. These recordings are different tape passages, so
 counts alone are not a controlled comparison of capture methods.
+
+### Locating interruptions below the recorder
+
+Builds now include `ecv-coreaudio`, a direct Core Audio diagnostic capture path.
+Its realtime input callback copies into a bounded, preallocated ring; a separate
+consumer writes PCM. The AVFoundation recorder also uses a bounded writer queue.
+Both report overruns rather than silently dropping samples. Do not use direct
+Core Audio recordings with reported gaps as archival captures: missing intervals
+are not filled, so the resulting file is shorter than the elapsed timeline.
+
+```sh
+# Existing ecv-audio positional arguments remain compatible:
+build/headless/ecv-audio 'USB Audio Interface' 15 build/headless/probe.caf \
+  --diagnostics build/headless/probe.jsonl
+# Repeatable comparison, with video started before each audio capture:
+python3 tools/compare-audio.py build/headless/comparison-new --seconds 15 --video
+# Optional buffer-size experiment; restores the previous size after capture:
+build/headless/ecv-coreaudio 'USB Audio Interface' 15 build/headless/core.caf \
+  --buffer-frames 1024 --diagnostics build/headless/core.jsonl
+```
+
+Diagnostic JSONL contains incoming sample counts, buffer sizes, zero/held sample
+counts and RMS by channel. Values are measured before writing the file. Native
+reports include device UID and format; AVFoundation also reports microphone mode,
+while Core Audio reports host-clock elapsed time, sample-clock resets and queue
+errors. Input media references stay owned until the writer finishes; Core Audio
+never allocates or performs file IO in its realtime callback.
+
+`compare-audio.py` retains both original channels, per-channel detector reports,
+callback diagnostics, logs, final video snapshots and a summary in a new directory.
+It runs backends sequentially. Exit 1 means transport defects, suspicious events,
+or insufficient signal on the confirmed soundtrack channel 2. A `candidate_pass`
+still needs listening confirmation and a repeat with the same tape passage.
+The player must show PLAY for playback-quality acceptance; STOP tests only exercise
+the transport. Existing combined recording/checking via `check-audio.py` remains
+available and uses AVFoundation.
+
+Investigation on 2026-11-25:
+
+- AVFoundation's incoming buffers already contained exact zeros; PCM frame counts
+  matched CMSampleBuffer counts. Active and preferred microphone modes were both
+  Standard. This rules out export and active Voice Isolation in those tests.
+- A video-first comparison yielded 8.062 s of flat silence in 14.868 s through
+  AVFoundation, with 386,996 exact-zero samples per channel measured before writing.
+- Direct Core Audio captured only 7.179 s across a 14.998 s host timeline, with
+  42 sample-clock resets and no queue overruns. The PCM detector alone found no
+  silent runs, demonstrating why transport and content reports must be combined.
+- macOS logs showed repeated `HandlePlugIn_RequestConfigChange` calls and audio
+  engine stop/restart cycles. Buffer sizes 480, 1024 and 2048 each still had seven
+  resets in five seconds. Video-first startup did not resolve the problem.
+- The comparison's final video image showed the camera in STOP. These results
+  demonstrate transport failure; they do not certify audible playback quality.
+
+Relevant sources and limits:
+
+- [FFmpeg 9.0.1 input](https://github.com/FFmpeg/FFmpeg/blob/n9.0.1/libavdevice/avfoundation.m)
+  replaces unread audio buffers; upstream master uses a producer/consumer wait.
+  That explains a possible additional loss mechanism but not the native resets.
+- [Linux's STK1160 alignment fix](https://lkml.iu.edu/1611.3/01090.html) applies to
+  USB `05e1:0408` and requires transfer alignment. This is a driver-level lead,
+  not proof that Apple's driver has the same defect or a patch we can apply at
+  the AVFoundation layer.
+- [Linux AC97 setup](https://github.com/torvalds/linux/blob/master/drivers/media/usb/stk1160/stk1160-ac97.c)
+  distinguishes internal ADC and AC97 hardware, resets the codec and selects
+  line-in. No speculative codec register changes were applied.
+- [Focusrite's macOS input guidance](https://support.focusrite.com/hc/en-gb/articles/15437020104082-macOS-recording-input-issues)
+  motivates checking microphone processing; Standard was verified locally.
+
+Next isolation step: bypass the current multiport hub or use another USB-C port,
+then rerun the comparison. Only after a candidate passes should we run three
+30-second playback captures and a two-minute simultaneous-video capture, followed
+by listening review. Those acceptance runs are deliberately pending: the current
+configuration demonstrably fails, and more long recordings would not validate a fix.

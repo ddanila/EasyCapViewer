@@ -63,6 +63,8 @@ def analyze(samples, rate):
     events.sort(key=lambda x: x['start_seconds'])
     suspected = sum(e['suspected_interruption'] for e in events)
     return dict(duration_seconds=n/rate, sample_rate=rate,
+                zero_samples=sum(x == 0 for x in samples),
+                signal_present=rms(samples) > 33,
                 suspected_events=suspected,
                 flat_runs=sum(e['kind'] != 'abrupt_jump' for e in events),
                 flat_seconds=flat_seconds, flat_fraction=flat_seconds/(n/rate),

@@ -36,6 +36,12 @@ class AudioCheckTests(unittest.TestCase):
         self.assertTrue(any(e['kind'] == 'held_sample' and e['suspected_interruption']
                             for e in checker.analyze(samples, RATE)['events']))
 
+    def test_buffer_boundary_click(self):
+        samples = self.tone()
+        samples[4096] = 30000
+        events = checker.analyze(samples, RATE)['events']
+        self.assertTrue(any(e['kind'] == 'abrupt_jump' and abs(e['start_seconds']-4096/RATE) < .001 for e in events))
+
     def test_click(self):
         samples = self.tone()
         samples[24000] = 30000
