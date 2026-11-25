@@ -70,7 +70,7 @@ int main(int argc,char **argv) {
     if(!probe&&argc!=3&&!(argc==5&&!strcmp(argv[3],"--start-delay"))){fprintf(stderr,"Usage: ecv-usbaudio SECONDS NEW_OUTPUT.s16le [--start-delay SECONDS] | --probe | --self-test\n");return 2;}
     double seconds=0,delay=0;char *end=NULL;
     if(argc==5){delay=strtod(argv[4],&end);if(end==argv[4]||*end||!isfinite(delay)||delay<0||delay>30)return 2;}
-    if(!probe){seconds=strtod(argv[1],&end);if(end==argv[1]||*end||!isfinite(seconds)||seconds<=0||seconds>120)return 2;}
+    if(!probe){seconds=strtod(argv[1],&end);if(end==argv[1]||*end||!isfinite(seconds)||seconds<=0||seconds>600)return 2;}
     libusb_context *context=NULL;libusb_device_handle *dev=NULL;libusb_device **list=NULL;
     int error=libusb_init(&context);if(error)return 1;
     ssize_t count=libusb_get_device_list(context,&list);int found=0;
@@ -124,6 +124,7 @@ int main(int argc,char **argv) {
         libusb_set_iso_packet_lengths(transfers[i],packetSize);
         error=libusb_submit_transfer(transfers[i]);if(error)break;c.active++;
     }
+    if(!error){fprintf(stderr,"Recording audio now\n");fflush(stderr);}
     double start=now();
     while(!error&&!c.failed&&!interrupted&&now()-start<seconds){struct timeval timeout={0,50000};error=libusb_handle_events_timeout(context,&timeout);if(error==LIBUSB_ERROR_INTERRUPTED)error=0;}
     c.stopping=1;

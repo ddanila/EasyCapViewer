@@ -450,8 +450,10 @@ python3 tools/check-audio.py build/headless/new-take/listen.wav \
   --report build/headless/new-take/check.json
 ```
 
-The output directory must be new; captures are bounded to 1–120 seconds. Omit
-`--video` for audio alone. Video mode exercises simultaneous video transfers and
+The output directory must be new; captures are bounded to 1–600 seconds. Omit
+`--video` for audio alone. The helper checks available disk space before taking
+USB ownership, allowing a 1 GiB reserve. Wait for `Recording audio now` in
+`audio.log` before starting the player to preserve its opening. Video mode exercises simultaneous video transfers and
 saves both the final 704×576 UYVY snapshot and the full raw movie. Allow about
 40 MB/s of disk space during video capture, including the ten-second lead-in.
 Export with `python3 tools/export-usb.py build/headless/new-take` to produce

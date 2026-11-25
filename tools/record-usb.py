@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -18,13 +19,16 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path, help='New capture directory')
-    parser.add_argument('--seconds', type=int, default=30, choices=range(1,121), metavar='1..120')
+    parser.add_argument('--seconds', type=int, default=30, choices=range(1,601), metavar='1..600')
     parser.add_argument('--video', action='store_true')
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error('macOS requires administrator authorization: run with sudo')
     args.directory.mkdir(parents=True, exist_ok=False)
     folder = args.directory.resolve()
+    required_bytes = ((args.seconds+10)*704*576*2*50 if args.video else 0)+args.seconds*192000+1024**3
+    if shutil.disk_usage(folder).free < required_bytes:
+        parser.error(f'Insufficient space: need {required_bytes/1024**3:.1f} GiB including reserve')
     video = audio = None
     def interrupted(signum, frame):
         raise KeyboardInterrupt
